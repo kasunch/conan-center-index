@@ -1,7 +1,6 @@
 from conans import ConanFile
 from conans import tools
-from conans.client.build.cppstd_flags import cppstd_flag
-from conans.tools import Version
+from conans.tools import Version, cppstd_flag
 from conans.errors import ConanException
 
 from conans.errors import ConanInvalidConfiguration
@@ -42,7 +41,7 @@ class BoostConan(ConanFile):
         "asio_no_deprecated": [True, False],
         "filesystem_no_deprecated": [True, False],
         "fPIC": [True, False],
-        "layout": ["system", "versioned", "tagged"],
+        "layout": ["system", "versioned", "tagged", "b2-default"],
         "magic_autolink": [True, False],  # enables BOOST_ALL_NO_LIB
         "python_executable": "ANY",  # system default python installation is used, if None
         "python_version": "ANY",  # major.minor; computed automatically, if None
@@ -121,8 +120,7 @@ class BoostConan(ConanFile):
             del self.options.fPIC
 
     def build_requirements(self):
-        if not tools.which("b2"):
-            self.build_requires("b2/4.1.0")
+        self.build_requires("b2/4.2.0")
 
     def requirements(self):
         if self._zip_bzip2_requires_needed:
@@ -338,7 +336,8 @@ class BoostConan(ConanFile):
 
     @property
     def _b2_exe(self):
-        return tools.which("b2")
+        b2_exe = "b2.exe" if tools.os_info.is_windows else "b2"
+        return os.path.join(self.deps_cpp_info["b2"].rootpath, "bin", b2_exe)
 
     @property
     def _bcp_exe(self):
@@ -414,11 +413,9 @@ class BoostConan(ConanFile):
 
         with tools.vcvars(self.settings) if self._is_msvc else tools.no_op():
             with tools.chdir(sources):
-                # to locate user config jam (BOOST_BUILD_PATH)
-                with tools.environment_append({"BOOST_BUILD_PATH": self._boost_build_dir}):
-                    # To show the libraries *1
-                    # self.run("%s --show-libraries" % b2_exe)
-                    self.run(full_command)
+                # To show the libraries *1
+                # self.run("%s --show-libraries" % b2_exe)
+                self.run(full_command)
 
         arch = self.settings.get_safe('arch')
         if arch.startswith("asm.js"):
@@ -534,8 +531,8 @@ class BoostConan(ConanFile):
         if self._b2_abi:
             flags.append("abi=%s" % self._b2_abi)
 
-        flags.append("--layout=%s" % self.options.layout)
-        flags.append("-sBOOST_BUILD_PATH=%s" % self._boost_build_dir)
+        if self.options.layout is not "b2-default":
+            flags.append("--layout=%s" % self.options.layout)
         flags.append("--user-config=%s" % os.path.join(self._boost_build_dir, 'user-config.jam'))
         flags.append("-sNO_ZLIB=%s" % ("0" if self.options.zlib else "1"))
         flags.append("-sNO_BZIP2=%s" % ("0" if self.options.bzip2 else "1"))
@@ -571,12 +568,7 @@ class BoostConan(ConanFile):
         flags.append("toolset=%s" % self._toolset)
 
         if self.settings.get_safe("compiler.cppstd"):
-            flags.append("cxxflags=%s" % cppstd_flag(
-                    self.settings.get_safe("compiler"),
-                    self.settings.get_safe("compiler.version"),
-                    self.settings.get_safe("compiler.cppstd")
-                )
-            )
+            flags.append("cxxflags=%s" % cppstd_flag(self.settings))
 
         # CXX FLAGS
         cxx_flags = []
